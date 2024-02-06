@@ -4,38 +4,37 @@ const { Product, Category, Tag, ProductTag } = require('../../models');
 // The `/api/products` endpoint
 
 // get all products
-router.get('/', async(req, res) => {
+router.get('/', async (req, res) => {
   try {
     const allProducts = await Product.findAll({
       include: [
-        { model: Catetory },
+        { model: Category },
         { model: Tag, through: ProductTag },
       ],
     });
-    return req.json(allProducts);
+    return res.json(allProducts);
   } catch (error) {
-    return res.status(500).json({error: 'internal error sorry'});
+    return res.status(500).json({ error: 'Internal error, sorry' });
   }
-  // find all products
-  // be sure to include its associated Category and Tag data
 });
 
 // get one product
-router.get('/:id', async(req, res) => {
-  try{
-    const product = await product.FindByPk({
+router.get('/:id', async (req, res) => {
+  try {
+    const product = await Product.findByPk(req.params.id, {
       include: [
-        {model: Category},
-        {model: Tag, through: ProductTag },
+        { model: Category },
+        { model: Tag, through: ProductTag },
       ],
     });
-    return req.status(200).json(product);
-  } catch (error){
-    return req.status(404).json({error: 'product not found'});
-
+    if (product) {
+      return res.status(200).json(product);
+    } else {
+      return res.status(404).json({ error: 'Product not found' });
+    }
+  } catch (error) {
+    return res.status(500).json({ error: 'Internal error, sorry' });
   }
-  // find a single product by its `id`
-  // be sure to include its associated Category and Tag data
 });
 
 // create new product
@@ -50,12 +49,10 @@ router.post('/', async (req, res) => {
     }
 
     // Create the product
-    const product = await Product.create(
-      {
-      product_name: req.body.product_name,
-      price: req.body.price,
-      stock: req.body.stock,
-      tag_Id: req.body.tag_Id
+    const product = await Product.create({
+      product_name,
+      price,
+      stock,
     });
 
     // If there are product tags, create pairings in the ProductTag model
@@ -78,22 +75,24 @@ router.post('/', async (req, res) => {
 });
 
 // update product
-router.put('/:id', (req, res) => {
-  // update product data
-  Product.update(req.body, {
-    where: {
-      id: req.params.id,
-    },
-  })
-    .then((product) => {
+router.put('/:id', async (req, res) => {
+  try {
+    // update product data
+    const [updatedRows] = await Product.update(req.body, {
+      where: {
+        id: req.params.id,
+      },
+    });
+
+    if (updatedRows > 0) {
       if (req.body.tagIds && req.body.tagIds.length) {
-        
-        ProductTag.findAll({
-          where: { product_id: req.params.id }
-        }).then((productTags) => {
-          // create filtered list of new tag_ids
-          const productTagIds = productTags.map(({ tag_id }) => tag_id);
-          const newProductTags = req.body.tagIds
+        const productTags = await ProductTag.findAll({
+          where: { product_id: req.params.id },
+        });
+
+        // create filtered list of new tag_ids
+        const productTagIds = productTags.map(({ tag_id }) => tag_id);
+        const newProductTags = req.body.tagIds
           .filter((tag_id) => !productTagIds.includes(tag_id))
           .map((tag_id) => {
             return {
@@ -102,38 +101,52 @@ router.put('/:id', (req, res) => {
             };
           });
 
-            // figure out which ones to remove
-          const productTagsToRemove = productTags
+        // figure out which ones to remove
+        const productTagsToRemove = productTags
           .filter(({ tag_id }) => !req.body.tagIds.includes(tag_id))
           .map(({ id }) => id);
-                  // run both actions
-          return Promise.all([
-            ProductTag.destroy({ where: { id: productTagsToRemove } }),
-            ProductTag.bulkCreate(newProductTags),
-          ]);
-        });
+
+        // run both actions
+        await Promise.all([
+          ProductTag.destroy({ where: { id: productTagsToRemove } }),
+          ProductTag.bulkCreate(newProductTags),
+        ]);
       }
 
-      return res.json(product);
-    })
-    .catch((err) => {
-      // console.log(err);
-      res.status(400).json(err,'Product not found');
-    });
+      const updatedProduct = await Product.findByPk(req.params.id, {
+        include: [
+          { model: Category },
+          { model: Tag, through: ProductTag },
+        ],
+      });
+
+      return res.json(updatedProduct);
+    } else {
+      return res.status(404).json({ error: 'Product not found' });
+    }
+  } catch (error) {
+    console.error(error);
+    res.status(400).json({ error: 'Product not found or update failed' });
+  }
 });
 
-router.delete('/:id', (req, res) => {
+router.delete('/:id', async (req, res) => {
   // delete one product by its `id` value
-  Product.destroy({
-    where: {
-      product_id: req.params.book_id,
-    },
-  })
-    .then((deletedProduct) => {
-      res.json(deletedProduct);
-    })
-    .catch((err) => res.json(err, 'product not found'));
-});
+  try {
+    const deletedProduct = await Product.destroy({
+      where: {
+        id: req.params.id,
+      },
+    });
 
+    if (deletedProduct) {
+      res.json(deletedProduct);
+    } else {
+      res.status(404).json({ error: 'Product not found' });
+    }
+  } catch (error) {
+    res.status(500).json({ error: 'Internal error, sorry' });
+  }
+});
 
 module.exports = router;
